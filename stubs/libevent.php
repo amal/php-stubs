@@ -2,18 +2,118 @@
 
 // Start of PECL libevent v.0.0.4
 
+// Libevent documentation:
+// http://www.wangafu.net/~nickm/libevent-book/
+
+// PHP Libevent extension documentation:
+// http://php.net/libevent
+
+
+// Event flags
+
+/**
+ * This flag indicates an event that becomes active after a timeout elapses.
+ *
+ * The EV_TIMEOUT flag is ignored when constructing an event: you
+ * can either set a timeout when you add the event, or not.  It is
+ * set in the 'what' argument to the callback function when a timeout
+ * has occurred.
+ */
 define('EV_TIMEOUT', 1);
+
+/**
+ * This flag indicates an event that becomes active when the provided
+ * file descriptor is ready for reading.
+ */
 define('EV_READ', 2);
+
+/**
+ * This flag indicates an event that becomes active when the provided
+ * file descriptor is ready for writing.
+ */
 define('EV_WRITE', 4);
+
+/**
+ * Used to implement signal detection.
+ */
 define('EV_SIGNAL', 8);
+
+/**
+ * Indicates that the event is persistent.
+ *
+ * By default, whenever a pending event becomes active
+ * (because its fd is ready to read or write, or because its timeout expires),
+ * it becomes non-pending right before its callback is executed.
+ * Thus, if you want to make the event pending again, you can call event_add()
+ * on it again from inside the callback function.
+ *
+ * If the EV_PERSIST flag is set on an event, however, the event is persistent.
+ * This means that event remains pending even when its callback is activated.
+ * If you want to make it non-pending from within its callback, you can call
+ * event_del() on it.
+ *
+ * The timeout on a persistent event resets whenever the event’s callback runs.
+ * Thus, if you have an event with flags EV_READ|EV_PERSIST and a timeout of five
+ * seconds, the event will become active:
+ *
+ * Whenever the socket is ready for reading.
+ *
+ * Whenever five seconds have passed since the event last became active.
+ */
 define('EV_PERSIST', 16);
-define('EVLOOP_NONBLOCK', 2);
+
+
+// Event loop modes
+
+/**
+ * Event base loop mode.
+ * Starts only one iteration of loop.
+ *
+ * @see event_base_loop
+ */
 define('EVLOOP_ONCE', 1);
+
+/**
+ * Event base loop mode.
+ * Not wait for events to trigger, only check whether
+ * any events are ready to trigger immediately.
+ *
+ * @see event_base_loop
+ */
+define('EVLOOP_NONBLOCK', 2);
+
+
+// Buffered event error codes (second argument in buffer's error-callback)
+
+/**
+ * An event occured during a read operation on the
+ * bufferevent. See the other flags for which event it was.
+ */
 define('EVBUFFER_READ', 1);
+
+/**
+ * An event occured during a write operation on the bufferevent.
+ * See the other flags for which event it was.
+ */
 define('EVBUFFER_WRITE', 2);
+
+/**
+ * We finished a requested connection on the bufferevent.
+ */
 define('EVBUFFER_EOF', 16);
+
+/**
+ * An error occurred during a bufferevent operation. For more information
+ * on what the error was, call {@link socket_strerror}().
+ */
 define('EVBUFFER_ERROR', 32);
+
+/**
+ * A timeout expired on the bufferevent.
+ */
 define('EVBUFFER_TIMEOUT', 64);
+
+
 
 
 /**
@@ -48,20 +148,42 @@ function event_base_free($event_base) {}
  *
  * <p>Starts event loop for the specified event base.</p>
  *
+ * <p>By default, the {@link event_base_loop}() function runs an event_base until
+ * there are no more events registered in it. To run the loop, it repeatedly
+ * checks whether any of the registered events has triggered (for example,
+ * if a read event’s file descriptor is ready to read, or if a timeout event’s
+ * timeout is ready to expire). Once this happens, it marks all triggered events
+ * as "active", and starts to run them.
+ * </p>
+ *
+ * <p>You can change the behavior of event_base_loop() by setting one or more flags
+ * in its flags argument. If EVLOOP_ONCE is set, then the loop will wait until some
+ * events become active, then run active events until there are no more to run, then
+ * return. If EVLOOP_NONBLOCK is set, then the loop will not wait for events to trigger:
+ * it will only check whether any events are ready to trigger immediately,
+ * and run their callbacks if so.
+ * </p>
+ *
  * @link http://php.net/event_base_loop
  *
  * @param resource $event_base Valid event base resource.
  * @param int $flags [optional] Optional parameter, which can take any combination of EVLOOP_ONCE and EVLOOP_NONBLOCK.
  *
- * @return int returns 0 on success, -1 on error and 1 if no events were registered.
+ * @return int <p>
+ * Returns 0 if it exited normally,
+ * -1 if it exited because of some unhandled error in the backend
+ * and 1 if no events were registered.
+ * </p>
  */
 function event_base_loop($event_base, $flags = null) {}
 
 /**
- * <p>Abort event loop</p>
+ * <p>Tells the event_base to exit its loop immediately.</p>
  * <p>(PECL libevent >= 0.0.1)</p>
  *
- * <p>Abort the active event loop immediately. The behaviour is similar to break statement.</p>
+ * <p>It differs from {@link event_base_loopexit}() in that if the event_base is currently
+ * running callbacks for any active events, it will exit immediately after finishing the
+ * one it’s currently processing. The behaviour is similar to break statement.</p>
  *
  * @link http://php.net/event_base_loopbreak
  *
@@ -72,16 +194,25 @@ function event_base_loop($event_base, $flags = null) {}
 function event_base_loopbreak($event_base) {}
 
 /**
- * <p>Exit loop after a time</p>
+ * <p>Tells an event_base to stop looping after a given time has elapsed</p>
  * <p>(PECL libevent >= 0.0.1)</p>
  *
- * <p>The next event loop iteration after the given timer expires will
- * complete normally, then exit without blocking for events again.</p>
+ * <p>If the event_base is currently running callbacks for any active events,
+ * it will continue running them, and not exit until they have all been run.</p>
+ *
+ * <p>If event loop isn't running {@link event_base_loopexit}() schedules the next instance
+ * of the event loop to stop right after the next round of callbacks are run (as if it had
+ * been invoked with EVLOOP_ONCE).</p>
  *
  * @link http://php.net/event_base_loopexit
  *
- * @param resource $event_base Valid event base resource.
- * @param int $timeout [optional] Optional timeout parameter (in microseconds).
+ * @param resource $event_base <p>
+ * Valid event base resource.
+ * </p>
+ * @param int $timeout [optional] <p>
+ * Optional timeout parameter (in microseconds). If lower then 1,
+ * the event_base stops looping without a delay.
+ * </p>
  *
  * @return bool returns TRUE on success or FALSE on error.
  */
@@ -119,6 +250,7 @@ function event_base_set($event, $base) {}
  */
 function event_base_priority_init($event_base, $npriorities) {}
 
+
 /**
  * <p>Creates and returns a new event resource.</p>
  * <p>(PECL libevent >= 0.0.1)</p>
@@ -145,11 +277,16 @@ function event_free($event) {}
  * <p>Add an event to the set of monitored events</p>
  * <p>(PECL libevent >= 0.0.1)</p>
  *
- * <p>schedules the execution of the event when the event specified in
- * {@link event_set}() occurs or in at least the time specified by the timeout
- * argument. If timeout was not specified, not timeout is set. The event
- * must be already initalized by {@link event_set}() and {@link event_base_set}() functions.
- * If the event already has a timeout set, it is replaced by the new one.</p>
+ * <p>Schedules the execution of the non-pending event (makes it pending in it's
+ * configured base) when the event specified in {@link event_set}() occurs or in
+ * at least the time specified by the timeout argument. If timeout was not specified,
+ * not timeout is set. The event must be already initalized by
+ * {@link event_set}() and {@link event_base_set}() functions.
+ * If the event already has a timeout set,
+ * it is replaced by the new one.</p>
+ *
+ * <p>If you call {@link event_add}() on an event that is already pending,
+ * it will leave it pending, and reschedule it with the provided timeout.</p>
  *
  * @link http://php.net/event_add
  *
@@ -178,7 +315,7 @@ function event_add($event, $timeout = -1) {}
  *
  * <p>In case of matching event, these three arguments are passed to the callback function:
  * <table>
- * 	<tr>
+ *   <tr>
  * 		<td><b>$fd</b></td>
  * 		<td>Signal number or resource indicating the stream.</td>
  * 	</tr>
@@ -198,7 +335,7 @@ function event_add($event, $timeout = -1) {}
  * @param resource $event <p>
  * Valid event resource.
  * </p>
- * @param resource|mixed $fd <p>
+ * @param resource|int $fd <p>
  * Valid PHP stream resource. The stream must be castable to file descriptor,
  * so you most likely won't be able to use any of filtered streams.
  * </p>
@@ -222,6 +359,9 @@ function event_set($event, $fd, $events, $callback, $arg = null) {}
  * <p>Remove an event from the set of monitored events.</p>
  * <p>(PECL libevent >= 0.0.1)</p>
  *
+ * <p>Calling {@link event_del}() on an initialized event makes it non-pending
+ * and non-active. If the event was not pending or active, there is no effect.</p>
+ *
  * @link http://php.net/event_del
  *
  * @param resource $event Valid event resource.
@@ -229,6 +369,7 @@ function event_set($event, $fd, $events, $callback, $arg = null) {}
  * @return bool returns TRUE on success or FALSE on error.
  */
 function event_del($event) {}
+
 
 /**
  * <p>Create new buffered event</p>
@@ -238,13 +379,24 @@ function event_del($event) {}
  * Using buffered event you don't need to deal with the I/O manually, instead
  * it provides input and output buffers that get filled and drained automatically.</p>
  *
+ * <p>Every bufferevent has two data-related callbacks: a read callback and a write
+ * callback. By default, the read callback is called whenever any data is read from
+ * the underlying transport, and the write callback is called whenever enough data
+ * from the output buffer is emptied to the underlying transport. You can override
+ * the behavior of these functions by adjusting the read and write "watermarks"
+ * of the bufferevent (see {@link event_buffer_watermark_set}()).</p>
+ *
+ * <p>A bufferevent also has an "error" or "event" callback that gets invoked to tell
+ * the application about non-data-oriented events, like when a connection is closed or
+ * an error occurs.</p>
+ *
  * @link http://php.net/event_buffer_new
  *
- * @param resource $stream Valid PHP stream resource. Must be castable to file descriptor.
- * @param callback|null $readcb Callback to invoke where there is data to read, or NULL if no callback is desired.
+ * @param resource      $stream  Valid PHP stream resource. Must be castable to file descriptor.
+ * @param callback|null $readcb  Callback to invoke where there is data to read, or NULL if no callback is desired.
  * @param callback|null $writecb Callback to invoke where the descriptor is ready for writing, or NULL if no callback is desired.
- * @param callback|null $errorcb Callback to invoke where there is an error on the descriptor, cannot be NULL.
- * @param mixed $arg An argument that will be passed to each of the callbacks (optional).
+ * @param callback      $errorcb Callback to invoke where there is an error on the descriptor, cannot be NULL.
+ * @param mixed         $arg     An argument that will be passed to each of the callbacks (optional).
  *
  * @return resource|bool returns new buffered event resource on success or FALSE on error.
  */
@@ -278,16 +430,33 @@ function event_buffer_free($bevent) {}
 function event_buffer_base_set($bevent, $event_base) {}
 
 /**
- * <p>Assign a priority to a buffered event</p>
+ * <p>Assign a priority to a buffered event. Use it after
+ * initializing event, but before adding an event to the event_base.</p>
  * <p>(PECL libevent >= 0.0.1)</p>
  *
+ * <p>When multiple events trigger at the same time, Libevent
+ * does not define any order with respect to when their callbacks
+ * will be executed. You can define some events as more important
+ * than others by using priorities.</p>
+ *
+ * <p>When multiple events of multiple priorities become active,
+ * the low-priority events are not run. Instead, Libevent runs
+ * the high priority events, then checks for events again. Only
+ * when no high-priority events are active are the low-priority
+ * events run.</p>
+ *
+ * <p>When you do not set the priority for an event, the default
+ * is the number of queues in the event base, divided by 2.</p>
+ *
  * @link http://php.net/event_buffer_priority_set
+ *
+ * @see event_base_priority_init
  *
  * @param resource $bevent <p>
  * Valid buffered event resource.
  * </p>
  * @param int $priority <p>
- * Priority level. Cannot be less than zero and cannot exceed
+ * Priority level. Cannot be less than 0 and cannot exceed
  * maximum priority level of the event base (see {@link event_base_priority_init}()).
  * </p>
  *
@@ -371,6 +540,28 @@ function event_buffer_timeout_set($bevent, $read_timeout, $write_timeout) {}
  * <p>Set the watermarks for read and write events.</p>
  * <p>(PECL libevent >= 0.0.1)</p>
  *
+ * <p>Every bufferevent has four watermarks:</p>
+ *
+ * <p><b>Read low-water mark</b><br/>
+ * Whenever a read occurs that leaves the bufferevent’s input buffer at this
+ * level or higher, the bufferevent’s read callback is invoked. Defaults to 0,
+ * so that every read results in the read callback being invoked.</p>
+ *
+ * <p><b>Read high-water mark</b><br/>
+ * If the bufferevent’s input buffer ever gets to this level, the bufferevent
+ * stops reading until enough data is drained from the input buffer to take us
+ * below it again. Defaults to unlimited, so that we never stop reading because
+ * of the size of the input buffer.</p>
+ *
+ * <p><b>Write low-water mark</b><br/>
+ * Whenever a write occurs that takes us to this level or below, we invoke the write
+ * callback. Defaults to 0, so that a write callback is not invoked unless the output
+ * buffer is emptied.</p>
+ *
+ * <p><b>Write high-water mark</b><br/>
+ * Not used by a bufferevent directly, this watermark can have special meaning when
+ * a bufferevent is used as the underlying transport of another bufferevent.</p>
+ *
  * <p>Libevent does not invoke read callback unless there is at least lowmark
  * bytes in the input buffer; if the read buffer is beyond the highmark,
  * reading is stopped. On output, the write callback is invoked whenever
@@ -378,10 +569,10 @@ function event_buffer_timeout_set($bevent, $read_timeout, $write_timeout) {}
  *
  * @link http://php.net/event_buffer_watermark_set
  *
- * @param resource $bevent Valid buffered event resource.
- * @param int $events Any combination of EV_READ and EV_WRITE.
- * @param int $lowmark Low watermark.
- * @param int $highmark High watermark.
+ * @param resource $bevent   Valid buffered event resource.
+ * @param int      $events   Any combination of EV_READ and EV_WRITE.
+ * @param int      $lowmark  Low watermark.
+ * @param int      $highmark High watermark.
  *
  * @return void
  */
@@ -418,14 +609,89 @@ function event_buffer_fd_set($bevent, $fd) {}
  */
 function event_buffer_set_callback($bevent, $readcb, $writecb, $errorcb, $arg = null) {}
 
+
+/**
+ * <p>Alias of {@link event_new}().</p>
+ *
+ * @return resource|bool returns valid event base resource on success or FALSE on error.
+ */
 function event_timer_new() {}
 
+/**
+ * <p>Prepares the timer event to be used in {@link event_add}().</p>
+ *
+ * <p>The event is prepared to call the function specified by the callback
+ * on the timeout event (EV_TIMEOUT).</p>
+ *
+ * <p>After initializing the event, use {@link event_base_set}() to associate the event with its event base.</p>
+ *
+ * <p>In case of matching event, these three arguments are passed to the callback function:
+ * <table>
+ * 	<tr>
+ * 		<td><b>$fd</b></td>
+ * 		<td>null</td>
+ * 	</tr>
+ * 	<tr>
+ * 		<td><b>$events</b></td>
+ * 		<td>A flag indicating the event. EV_TIMEOUT.</td>
+ * 	</tr>
+ * 	<tr>
+ * 		<td><b>$arg</b></td>
+ * 		<td>Optional parameter, previously passed to {@link event_timer_set}() as arg.</td>
+ * 	</tr>
+ * </table>
+ * </p>
+ *
+ * @param resource $event <p>
+ * Valid event resource.
+ * </p>
+ * @param callback $callback <p>
+ * Callback function to be called when the matching event occurs.
+ * </p>
+ * @param mixed $arg [optional] <p>
+ * Optional callback parameter.
+ * </p>
+ *
+ * @return void
+ */
 function event_timer_set($event, $callback, $arg = null) {}
 
+/**
+ * <p>Checks if a specific event is pending or scheduled.</p>
+ *
+ * @param resource $event <p>
+ * Valid event resource.
+ * </p>
+ * @param null $timeout [optional] <p>
+ * Optional timeout (in microseconds).
+ * </p>
+ *
+ * @return bool TRUE if event is not scheduled (added) FALSE otherwise
+ */
 function event_timer_pending($event, $timeout = -1) {}
 
+/**
+ * <p>Alias of {@link event_add}().</p>
+ *
+ * @param resource $event <p>
+ * Valid event resource.
+ * </p>
+ * @param null $timeout [optional] <p>
+ * Optional timeout (in microseconds).
+ * </p>
+ *
+ * @return bool returns TRUE on success or FALSE on error.
+ */
 function event_timer_add($event, $timeout = -1) {}
 
+/**
+ * <p>Alias of {@link event_del}().</p>
+ *
+ * @param resource $event Valid event resource.
+ *
+ * @return bool returns TRUE on success or FALSE on error.
+ */
 function event_timer_del($event) {}
+
 
 // End of PECL libevent v.0.0.4
