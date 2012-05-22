@@ -351,7 +351,7 @@ function event_add($event, $timeout = -1) {}
  * Optional callback parameter.
  * </p>
  *
- * @return void
+ * @return bool returns TRUE on success or FALSE on error.
  */
 function event_set($event, $fd, $events, $callback, $arg = null) {}
 
@@ -490,7 +490,7 @@ function event_buffer_write($bevent, $data, $data_size = -1) {}
  * @param resource $bevent Valid buffered event resource.
  * @param int $data_size Data size in bytes.
  *
- * @return void
+ * @return string
  */
 function event_buffer_read($bevent, $data_size) {}
 
@@ -503,7 +503,7 @@ function event_buffer_read($bevent, $data_size) {}
  * @param resource $bevent Valid buffered event resource.
  * @param int $events Any combination of EV_READ and EV_WRITE.
  *
- * @return void
+ * @return bool returns TRUE on success or FALSE on error.
  */
 function event_buffer_enable($bevent, $events) {}
 
@@ -695,3 +695,4 @@ function event_timer_del($event) {}
 
 
 // End of PECL libevent v.0.0.4
+
